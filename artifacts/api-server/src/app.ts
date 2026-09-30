@@ -4,16 +4,11 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { clerkMiddleware } from "@clerk/express";
-import { publishableKeyFromHost } from "@clerk/shared/keys";
-import {
-  CLERK_PROXY_PATH,
-  clerkProxyMiddleware,
-  getClerkProxyHost,
-} from "./middlewares/clerkProxyMiddleware";
+import fs from "node:fs";
+import path from "node:path";
 
 const app: Express = express();
 
-app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use(
   pinoHttp({
     logger,
@@ -37,15 +32,26 @@ app.use(cors({ credentials: true, origin: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use(
-  clerkMiddleware((req) => ({
-    publishableKey: publishableKeyFromHost(
-      getClerkProxyHost(req) ?? "",
-      process.env.CLERK_PUBLISHABLE_KEY,
-    ),
-  })),
-);
+// Reads CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY from the environment.
+app.use(clerkMiddleware());
 
 app.use("/api", router);
+
+// Serve the built website from this same server, so the site and the API
+// share one address (needed for login cookies).
+const staticDir =
+  process.env.STATIC_DIR ??
+  path.resolve(process.cwd(), "artifacts/gridora/dist/public");
+
+if (fs.existsSync(path.join(staticDir, "index.html"))) {
+  app.use(express.static(staticDir));
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/api")) {
+      next();
+      return;
+    }
+    res.sendFile(path.join(staticDir, "index.html"));
+  });
+}
 
 export default app;
