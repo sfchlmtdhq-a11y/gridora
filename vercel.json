@@ -1,0 +1,5 @@
+{
+  "framework": null,
+  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/gridora run build && pnpm --filter @workspace/api-server run build:vercel"
+}
