@@ -4,7 +4,9 @@ services:
     runtime: node
     plan: free
     buildCommand: >-
-      corepack enable &&
+      mkdir -p $HOME/bin &&
+      corepack enable --install-directory $HOME/bin &&
+      export PATH=$HOME/bin:$PATH &&
       pnpm install --no-frozen-lockfile &&
       pnpm --filter @workspace/db run push-force &&
       pnpm --filter @workspace/gridora run build &&
