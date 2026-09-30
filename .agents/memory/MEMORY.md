@@ -1,0 +1,1 @@
+- [Gridora auth boundary](gridora-auth.md) — Clerk sessions bridge to an unseeded local profile database; connections and admin authorization stay server-side.

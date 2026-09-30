@@ -1,6 +1,6 @@
-# [Project name]
+# Gridora
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Gridora is a real-data creative connections platform for designers and clients with persistent Clerk authentication, profiles, connections, private messaging, projects, and protected admin totals.
 
 ## Run & Operate
 
@@ -22,23 +22,35 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/gridora` — React/Vite product UI, Clerk sign-in/sign-up routes, responsive app shell, empty states, and all user-facing flows.
+- `artifacts/api-server/src/routes/gridora.ts` — authenticated API handlers for profiles, connections, messages, feed, projects, notifications, and admin summary.
+- `artifacts/api-server/src/middlewares/auth.ts` — Clerk session checks and first-use local profile bridge.
+- `lib/db/src/schema/gridora.ts` — PostgreSQL schema for all Gridora entities.
+- `lib/api-spec/openapi.yaml` — source-of-truth API contract; generated hooks live in `lib/api-client-react`.
+- `artifacts/gridora/src/index.css` — Gridora visual tokens and responsive fixed-navigation shell styles.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Clerk owns browser authentication and Google SSO; the API trusts Clerk session cookies and never accepts client-supplied user IDs for ownership.
+- A local Gridora user row is created on the first authenticated API request from the actual Clerk profile; no seed/demo rows are inserted.
+- Messages are only readable or writable between accepted connection pairs; sender ownership is checked server-side for edit/delete.
+- Admin access is role-based in PostgreSQL. An optional server-only `ADMIN_CLERK_USER_IDS` environment value can securely bootstrap designated Clerk IDs into the admin role.
+- Replit-managed Clerk enforces CAPTCHA and bot protection outside the application; do not try to disable or bypass it in frontend code.
+- The mobile shell keeps the header and bottom navigation fixed while adding body padding so content remains reachable.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Gridora opens publicly with a branded landing page. Signed-in users get a real feed, people discovery, connection requests, accepted-connection-only conversations, profile editing, project requests, notifications, and a server-authorized admin metrics view. Every list renders a meaningful empty state when no rows exist.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Keep the initial experience completely empty and never add fake users, activity, or statistics.
+- Preserve the dark, violet-accented, mobile-first visual direction from the provided Gridora references.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Run `pnpm --filter @workspace/api-spec run codegen` after every OpenAPI change before typechecking client or server consumers.
+- Use Clerk browser cookies for web API calls; do not add bearer-token handling to the React app.
 
 ## Pointers
 

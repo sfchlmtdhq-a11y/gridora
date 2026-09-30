@@ -10,6 +10,20 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authenticated account bootstrap
+  - name: profiles
+    description: User profiles and discovery
+  - name: connections
+    description: Connection requests and accepted connections
+  - name: messages
+    description: Private conversations between accepted connections
+  - name: feed
+    description: Real posts, comments, and likes
+  - name: projects
+    description: Project requests
+  - name: admin
+    description: Server-authorized administration
 paths:
   /healthz:
     get:
@@ -24,7 +38,439 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /me:
+    get:
+      operationId: getCurrentUser
+      tags: [auth]
+      summary: Get the authenticated user's local profile
+      responses:
+        "200":
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUser"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /profiles:
+    get:
+      operationId: listProfiles
+      tags: [profiles]
+      summary: Search real user profiles
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: userType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [designer, client, other]
+      responses:
+        "200":
+          description: Real profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Profile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /profiles/me:
+    patch:
+      operationId: updateMyProfile
+      tags: [profiles]
+      summary: Update the authenticated user's profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdate"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /profiles/{userId}:
+    get:
+      operationId: getProfile
+      tags: [profiles]
+      summary: Get a real user profile
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /connections:
+    get:
+      operationId: listConnections
+      tags: [connections]
+      summary: List accepted connections and pending requests
+      responses:
+        "200":
+          description: Connection summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createConnectionRequest
+      tags: [connections]
+      summary: Send a connection request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectionRequestInput"
+      responses:
+        "201":
+          description: Connection request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /connections/{connectionId}:
+    patch:
+      operationId: respondToConnectionRequest
+      tags: [connections]
+      summary: Accept or reject a connection request
+      parameters:
+        - $ref: "#/components/parameters/ConnectionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectionResponseInput"
+      responses:
+        "200":
+          description: Updated connection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /conversations:
+    get:
+      operationId: listConversations
+      tags: [messages]
+      summary: List conversations with accepted connections
+      responses:
+        "200":
+          description: Conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conversation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /conversations/{userId}/messages:
+    get:
+      operationId: listMessages
+      tags: [messages]
+      summary: Load a private conversation with an accepted connection
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Conversation messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Users must be accepted connections
+    post:
+      operationId: sendMessage
+      tags: [messages]
+      summary: Send a message to an accepted connection
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "201":
+          description: Sent message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Users must be accepted connections
+  /messages/{messageId}:
+    patch:
+      operationId: editMessage
+      tags: [messages]
+      summary: Edit a message owned by the current user
+      parameters:
+        - $ref: "#/components/parameters/MessageId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageUpdate"
+      responses:
+        "200":
+          description: Edited message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Only the sender can edit this message
+    delete:
+      operationId: deleteMessage
+      tags: [messages]
+      summary: Delete a message owned by the current user
+      parameters:
+        - $ref: "#/components/parameters/MessageId"
+      responses:
+        "204":
+          description: Message deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Only the sender can delete this message
+  /posts:
+    get:
+      operationId: listPosts
+      tags: [feed]
+      summary: List real posts
+      responses:
+        "200":
+          description: Real posts, possibly empty
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Post"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createPost
+      tags: [feed]
+      summary: Create a post owned by the current user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostInput"
+      responses:
+        "201":
+          description: Created post
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /posts/{postId}/like:
+    post:
+      operationId: togglePostLike
+      tags: [feed]
+      summary: Toggle the current user's like on a post
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Like state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LikeState"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /posts/{postId}/comments:
+    get:
+      operationId: listComments
+      tags: [feed]
+      summary: List comments for a post
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Comments, possibly empty
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Comment"
+    post:
+      operationId: createComment
+      tags: [feed]
+      summary: Comment on a post
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommentInput"
+      responses:
+        "201":
+          description: Created comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List project requests for the current user
+      responses:
+        "200":
+          description: Projects, possibly empty
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a project request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Project request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [connections]
+      summary: List notifications for the current user
+      responses:
+        "200":
+          description: Notifications, possibly empty
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /admin/summary:
+    get:
+      operationId: getAdminSummary
+      tags: [admin]
+      summary: Get real platform statistics for an administrator
+      responses:
+        "200":
+          description: Platform summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Admin role required
 components:
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+    ConnectionId:
+      name: connectionId
+      in: path
+      required: true
+      schema:
+        type: integer
+    MessageId:
+      name: messageId
+      in: path
+      required: true
+      schema:
+        type: integer
+    PostId:
+      name: postId
+      in: path
+      required: true
+      schema:
+        type: integer
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +479,207 @@ components:
           type: string
       required:
         - status
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    CurrentUser:
+      allOf:
+        - $ref: "#/components/schemas/Profile"
+        - type: object
+          required: [role]
+          properties:
+            role:
+              type: string
+              enum: [user, admin]
+    Profile:
+      type: object
+      required: [id, fullName, username, email, userType, bio, location, avatarUrl]
+      properties:
+        id: { type: string }
+        fullName: { type: string }
+        username: { type: string }
+        email: { type: string }
+        phone: { type: ["string", "null"] }
+        userType:
+          type: string
+          enum: [designer, client, other]
+        bio: { type: string }
+        location: { type: string }
+        avatarUrl: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+    ProfileUpdate:
+      type: object
+      properties:
+        fullName: { type: string, minLength: 1 }
+        username: { type: string, minLength: 1 }
+        phone: { type: ["string", "null"] }
+        userType:
+          type: string
+          enum: [designer, client, other]
+        bio: { type: string }
+        location: { type: string }
+        avatarUrl: { type: ["string", "null"] }
+    Connection:
+      type: object
+      required: [id, requesterId, recipientId, status, createdAt]
+      properties:
+        id: { type: integer }
+        requesterId: { type: string }
+        recipientId: { type: string }
+        status:
+          type: string
+          enum: [pending, accepted, rejected]
+        createdAt: { type: string, format: date-time }
+        respondedAt: { type: ["string", "null"], format: date-time }
+    ConnectionSummary:
+      type: object
+      required: [accepted, incoming, outgoing]
+      properties:
+        accepted:
+          type: array
+          items: { $ref: "#/components/schemas/Profile" }
+        incoming:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectionWithProfile"
+        outgoing:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectionWithProfile"
+    ConnectionWithProfile:
+      allOf:
+        - $ref: "#/components/schemas/Connection"
+        - type: object
+          required: [profile]
+          properties:
+            profile: { $ref: "#/components/schemas/Profile" }
+    ConnectionRequestInput:
+      type: object
+      required: [recipientId]
+      properties:
+        recipientId: { type: string }
+    ConnectionResponseInput:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [accepted, rejected]
+    Conversation:
+      type: object
+      required: [user, latestMessage, unreadCount]
+      properties:
+        user: { $ref: "#/components/schemas/Profile" }
+        latestMessage:
+          type: ["object", "null"]
+          properties:
+            id: { type: integer }
+            senderId: { type: string }
+            receiverId: { type: string }
+            body: { type: string }
+            createdAt: { type: string, format: date-time }
+            editedAt: { type: ["string", "null"], format: date-time }
+            deletedAt: { type: ["string", "null"], format: date-time }
+        unreadCount: { type: integer }
+    Message:
+      type: object
+      required: [id, senderId, receiverId, body, createdAt, editedAt]
+      properties:
+        id: { type: integer }
+        senderId: { type: string }
+        receiverId: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+        editedAt: { type: ["string", "null"], format: date-time }
+        deletedAt: { type: ["string", "null"], format: date-time }
+    MessageInput:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 4000 }
+    MessageUpdate:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 4000 }
+    Post:
+      type: object
+      required: [id, author, body, likeCount, commentCount, likedByMe, createdAt]
+      properties:
+        id: { type: integer }
+        author: { $ref: "#/components/schemas/Profile" }
+        body: { type: string }
+        likeCount: { type: integer }
+        commentCount: { type: integer }
+        likedByMe: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    PostInput:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 5000 }
+    LikeState:
+      type: object
+      required: [liked, likeCount]
+      properties:
+        liked: { type: boolean }
+        likeCount: { type: integer }
+    Comment:
+      type: object
+      required: [id, author, body, createdAt]
+      properties:
+        id: { type: integer }
+        author: { $ref: "#/components/schemas/Profile" }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+    CommentInput:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 2000 }
+    Project:
+      type: object
+      required: [id, title, description, status, clientId, designerId, createdAt]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        description: { type: string }
+        status:
+          type: string
+          enum: [requested, accepted, declined, in_progress, completed]
+        clientId: { type: string }
+        designerId: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+    ProjectInput:
+      type: object
+      required: [title, description]
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string, minLength: 1 }
+        designerId: { type: ["string", "null"] }
+    Notification:
+      type: object
+      required: [id, type, title, body, read, createdAt]
+      properties:
+        id: { type: integer }
+        type: { type: string }
+        title: { type: string }
+        body: { type: string }
+        read: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    AdminSummary:
+      type: object
+      required: [users, posts, likes, comments, connections, messages, projects, reports]
+      properties:
+        users: { type: integer }
+        posts: { type: integer }
+        likes: { type: integer }
+        comments: { type: integer }
+        connections: { type: integer }
+        messages: { type: integer }
+        projects: { type: integer }
+        reports: { type: integer }
 
