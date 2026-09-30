@@ -34,7 +34,9 @@ Gridora is a real-data creative connections platform for designers and clients w
 - Clerk owns browser authentication and Google SSO; the API trusts Clerk session cookies and never accepts client-supplied user IDs for ownership.
 - A local Gridora user row is created on the first authenticated API request from the actual Clerk profile; no seed/demo rows are inserted.
 - Messages are only readable or writable between accepted connection pairs; sender ownership is checked server-side for edit/delete.
-- Admin access is role-based in PostgreSQL. An optional server-only `ADMIN_CLERK_USER_IDS` environment value can securely bootstrap designated Clerk IDs into the admin role.
+- Admin access is role-based in PostgreSQL. Server-only `ADMIN_CLERK_USER_IDS` or verified-primary-email `ADMIN_CLERK_EMAILS` values can bootstrap admins; never authorize from frontend data.
+- Gridora stores the user’s display email separately from a canonical identity key that treats Gmail/Googlemail dot and plus aliases as the same identity. Phone contacts are stored only when Clerk verifies them, normalized to E.164, and unique; phone sign-in is not enabled by managed Clerk.
+- All user activity and admin totals come from PostgreSQL. Landing-page feature copy must not resemble live users, posts, counts, or activity.
 - Replit-managed Clerk enforces CAPTCHA and bot protection outside the application; do not try to disable or bypass it in frontend code.
 - The mobile shell keeps the header and bottom navigation fixed while adding body padding so content remains reachable.
 

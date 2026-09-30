@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type ErrorRequestHandler, type IRouter } from "express";
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { db, usersTable, connectionsTable, messagesTable, postsTable, likesTable, commentsTable, projectsTable, notificationsTable, reportsTable } from "@workspace/db";
 import {
@@ -37,45 +37,100 @@ const router: IRouter = Router();
 
 const getUserId = (req: AuthenticatedRequest) => req.userId;
 
+function normalizedEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function canonicalEmail(email: string) {
+  const normalized = normalizedEmail(email);
+  const separator = normalized.lastIndexOf("@");
+  if (separator < 1) return normalized;
+
+  const localPart = normalized.slice(0, separator);
+  const domain = normalized.slice(separator + 1);
+  if (domain === "gmail.com" || domain === "googlemail.com") {
+    const base = localPart.split("+", 1)[0].replaceAll(".", "");
+    return `${base}@gmail.com`;
+  }
+  return normalized;
+}
+
+function normalizePhone(phone: string | null | undefined): string | null {
+  if (!phone || !phone.trim()) return null;
+  const normalized = phone.trim().replace(/[^\d+]/g, "");
+  if (!/^\+[1-9]\d{7,14}$/.test(normalized)) {
+    throw new Error("Use a complete phone number with its country code.");
+  }
+  return normalized;
+}
+
+const configuredAdminIds = new Set(
+  (process.env.ADMIN_CLERK_USER_IDS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
+const configuredAdminEmails = new Set(
+  (process.env.ADMIN_CLERK_EMAILS ?? "")
+    .split(",")
+    .map(canonicalEmail)
+    .filter(Boolean),
+);
+
+async function promoteIfConfiguredAdmin(
+  user: typeof usersTable.$inferSelect,
+  userId: string,
+) {
+  if (user.role === "admin") return user;
+
+  let isConfiguredAdmin = configuredAdminIds.has(userId);
+  if (!isConfiguredAdmin && configuredAdminEmails.has(canonicalEmail(user.email))) {
+    const profile = await clerkProfile(userId);
+    isConfiguredAdmin =
+      profile.emailVerified &&
+      canonicalEmail(profile.email) === canonicalEmail(user.email) &&
+      configuredAdminEmails.has(canonicalEmail(profile.email));
+  }
+  if (!isConfiguredAdmin) return user;
+
+  const [promoted] = await db
+    .update(usersTable)
+    .set({ role: "admin", updatedAt: new Date() })
+    .where(eq(usersTable.id, userId))
+    .returning();
+  return promoted ?? user;
+}
+
 async function ensureUser(userId: string) {
   const [existing] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  const configuredAdminIds = new Set(
-    (process.env.ADMIN_CLERK_USER_IDS ?? "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
-  );
-  if (existing) {
-    if (configuredAdminIds.has(userId) && existing.role !== "admin") {
-      const [promoted] = await db
-        .update(usersTable)
-        .set({ role: "admin", updatedAt: new Date() })
-        .where(eq(usersTable.id, userId))
-        .returning();
-      return promoted ?? existing;
-    }
-    return existing;
-  }
+  if (existing) return promoteIfConfiguredAdmin(existing, userId);
 
   const profile = await clerkProfile(userId);
+  const email = normalizedEmail(profile.email);
+  const phone = normalizePhone(profile.phone);
+  const isConfiguredAdmin =
+    configuredAdminIds.has(userId) ||
+    (profile.emailVerified &&
+      configuredAdminEmails.has(canonicalEmail(profile.email)));
   const [created] = await db
     .insert(usersTable)
     .values({
       id: userId,
-      email: profile.email,
+      email,
+      emailKey: canonicalEmail(profile.email),
       fullName: profile.fullName,
       username: profile.username,
-      phone: profile.phone,
+      phone,
       avatarUrl: profile.avatarUrl,
-      role: configuredAdminIds.has(userId) ? "admin" : "user",
+      role: isConfiguredAdmin ? "admin" : "user",
     })
-    .onConflictDoNothing()
+    .onConflictDoNothing({ target: usersTable.id })
     .returning();
   if (created) return created;
 
   const [retried] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!retried) throw new Error("Unable to create local user profile");
-  return retried;
+  return promoteIfConfiguredAdmin(retried, userId);
 }
 
 function profileOf(user: typeof usersTable.$inferSelect) {
@@ -148,9 +203,18 @@ router.patch("/profiles/me", requireUser, async (req, res): Promise<void> => {
   }
   const currentUserId = getUserId(req as AuthenticatedRequest);
   await ensureUser(currentUserId);
+  let phone: string | null;
+  try {
+    // Phone numbers are sourced only from the user's verified Clerk account;
+    // never trust an unverified phone value submitted in a profile payload.
+    phone = normalizePhone((await clerkProfile(currentUserId)).phone);
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Invalid phone number" });
+    return;
+  }
   const [updated] = await db
     .update(usersTable)
-    .set({ ...body.data, updatedAt: new Date() })
+    .set({ ...body.data, phone, updatedAt: new Date() })
     .where(eq(usersTable.id, currentUserId))
     .returning();
   res.json(GetProfileResponse.parse(profileOf(updated)));
@@ -458,5 +522,26 @@ router.get("/admin/summary", requireUser, async (req, res): Promise<void> => {
     reports: await count(reportsTable),
   }));
 });
+
+function isUniqueConstraintViolation(error: unknown): boolean {
+  let current: unknown = error;
+  while (current && typeof current === "object") {
+    if ("code" in current && current.code === "23505") return true;
+    current = "cause" in current ? current.cause : null;
+  }
+  return false;
+}
+
+const identityConflictHandler: ErrorRequestHandler = (error, _req, res, next) => {
+  if (isUniqueConstraintViolation(error)) {
+    res.status(409).json({
+      error: "That email address or phone number is already linked to another Gridora account.",
+    });
+    return;
+  }
+  next(error);
+};
+
+router.use(identityConflictHandler);
 
 export default router;

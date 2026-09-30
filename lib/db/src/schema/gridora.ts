@@ -7,12 +7,14 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const usersTable = pgTable("gridora_users", {
   id: text("id").primaryKey(),
   email: text("email").notNull(),
+  emailKey: text("email_key").notNull().default(""),
   fullName: text("full_name").notNull(),
   username: text("username").notNull(),
   phone: text("phone"),
@@ -23,7 +25,10 @@ export const usersTable = pgTable("gridora_users", {
   role: text("role").notNull().default("user"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  uniqueIndex("gridora_users_email_key_unique").on(table.emailKey),
+  uniqueIndex("gridora_users_phone_unique").on(table.phone),
+]);
 
 export const connectionsTable = pgTable(
   "gridora_connections",

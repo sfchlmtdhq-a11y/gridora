@@ -20,18 +20,23 @@ export async function requireUser(
 
 export async function clerkProfile(userId: string) {
   const user = await clerkClient.users.getUser(userId);
-  const email = user.emailAddresses.find(
+  const primaryEmail = user.emailAddresses.find(
     (address) => address.id === user.primaryEmailAddressId,
-  )?.emailAddress ?? user.emailAddresses[0]?.emailAddress ?? "";
+  ) ?? user.emailAddresses[0];
+  const email = primaryEmail?.emailAddress ?? "";
   const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ");
+  const primaryPhone = user.phoneNumbers.find(
+    (phoneNumber) => phoneNumber.id === user.primaryPhoneNumberId,
+  );
 
   return {
     email,
+    emailVerified: primaryEmail?.verification?.status === "verified",
     fullName,
     username: user.username ?? "",
-    phone: user.phoneNumbers.find(
-      (phoneNumber) => phoneNumber.id === user.primaryPhoneNumberId,
-    )?.phoneNumber ?? null,
+    phone: primaryPhone?.verification?.status === "verified"
+      ? primaryPhone.phoneNumber
+      : null,
     avatarUrl: user.imageUrl ?? null,
   };
 }
