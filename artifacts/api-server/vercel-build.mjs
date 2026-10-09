@@ -1,27 +1,24 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { build as esbuild } from "esbuild";
 
 globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(artifactDir, "../..");
-const outRoot = path.join(repoRoot, ".vercel/output");
-const funcDir = path.join(outRoot, "functions/api/index.func");
-const staticDir = path.join(outRoot, "static");
-const siteDist = path.join(repoRoot, "artifacts/gridora/dist/public");
+const apiDir = path.join(repoRoot, "api");
 
-await rm(outRoot, { recursive: true, force: true });
-await mkdir(funcDir, { recursive: true });
+await rm(apiDir, { recursive: true, force: true });
+await mkdir(apiDir, { recursive: true });
 
 await esbuild({
   entryPoints: [path.join(artifactDir, "src/vercel.ts")],
   platform: "node",
   bundle: true,
   format: "esm",
-  outdir: funcDir,
+  outdir: apiDir,
   outExtension: { ".js": ".mjs" },
   entryNames: "index",
   logLevel: "info",
@@ -37,41 +34,4 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
   },
 });
 
-await writeFile(
-  path.join(funcDir, ".vc-config.json"),
-  JSON.stringify(
-    {
-      runtime: "nodejs22.x",
-      handler: "index.mjs",
-      launcherType: "Nodejs",
-      shouldAddHelpers: false,
-      supportsResponseStreaming: true,
-    },
-    null,
-    2,
-  ),
-);
-await writeFile(
-  path.join(funcDir, "package.json"),
-  JSON.stringify({ type: "module" }),
-);
-
-await cp(siteDist, staticDir, { recursive: true });
-
-await writeFile(
-  path.join(outRoot, "config.json"),
-  JSON.stringify(
-    {
-      version: 3,
-      routes: [
-        { src: "/api/(.*)", dest: "/api/index" },
-        { handle: "filesystem" },
-        { src: "/(.*)", dest: "/index.html" },
-      ],
-    },
-    null,
-    2,
-  ),
-);
-
-console.log("Vercel output ready in .vercel/output");
+console.log("Vercel API function ready in api/index.mjs");
