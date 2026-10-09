@@ -1,8 +1,8 @@
 {
-  "framework": null,
+  "framework": "vite",
   "installCommand": "pnpm install --no-frozen-lockfile",
-  "buildCommand": "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/gridora run build && pnpm --filter @workspace/api-server run build:vercel",
-  "outputDirectory": "artifacts/gridora/dist/public",
+  "buildCommand": "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/gridora run build && pnpm --filter @workspace/api-server run build:vercel && rm -rf public && mkdir -p public && cp -R artifacts/gridora/dist/public/. public/",
+  "outputDirectory": "public",
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/index" },
     { "source": "/:path*", "destination": "/index.html" }
