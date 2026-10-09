@@ -1,7 +1,7 @@
 {
   "framework": "vite",
   "installCommand": "pnpm install --no-frozen-lockfile",
-  "buildCommand": "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/gridora run build && pnpm --filter @workspace/api-server run build:vercel && rm -rf public && mkdir -p public && OUT=$(find . -type f -path '*/dist/public/index.html' -print -quit) && test -n \"$OUT\" && cp -R \"${OUT%/index.html}/.\" public/",
+  "buildCommand": "pnpm run vercel:build",
   "outputDirectory": "public",
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/index" },
