@@ -3,7 +3,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { build as esbuild } from "esbuild";
-import esbuildPluginPino from "esbuild-plugin-pino";
 
 globalThis.require = createRequire(import.meta.url);
 
@@ -27,7 +26,6 @@ await esbuild({
   entryNames: "index",
   logLevel: "info",
   external: ["pg-native"],
-  plugins: [esbuildPluginPino({ transports: ["pino-pretty"] })],
   banner: {
     js: `import { createRequire as __bannerCrReq } from 'node:module';
 import __bannerPath from 'node:path';
