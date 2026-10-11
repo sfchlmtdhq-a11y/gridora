@@ -49,5 +49,7 @@ Thumbs.db
 .local/
 # Vercel
 .vercel
-/api
+/api/*
+!/api/
+!/api/index.js
 /public
