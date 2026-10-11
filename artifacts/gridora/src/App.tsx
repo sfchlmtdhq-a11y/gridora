@@ -6,8 +6,7 @@ import {
   MessageCircle, MoreHorizontal, Pencil, Plus, Radio, Search, Send, Settings2,
   ShieldCheck, SlidersHorizontal, Sparkles, Trash2, UserRound, Users, X
 } from "lucide-react";
-import { ClerkProvider, SignIn, SignUp, useAuth, useClerk } from "@clerk/react";
-import { publishableKeyFromHost } from "@clerk/react/internal";
+import { SupabaseAuthProvider, useAuth, useAuthClient } from "@/lib/supabase-auth";
 import { Link, Route, Router as WouterRouter, Switch, useLocation, useParams } from "wouter";
 import {
   getGetAdminSummaryQueryKey, getGetCurrentUserQueryKey,
@@ -29,8 +28,6 @@ import "./index.css";
 
 const queryClient = new QueryClient();
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
-const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 
 function initials(profile?: Partial<Profile> | null) {
   return (profile?.fullName || profile?.username || "?").split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
@@ -161,7 +158,7 @@ function DesktopRail() {
 
 function AppShell({ children }: { children: ReactNode }) {
   const current = useGetCurrentUser({ query: { queryKey: getGetCurrentUserQueryKey() } });
-  const { signOut } = useClerk();
+  const { signOut } = useAuthClient();
   if (current.isLoading) return <div className="gridora-noise min-h-[100dvh] p-5"><LoadingState label="Loading Gridora" /></div>;
   if (current.isError || !current.data) return <AuthGate><div className="gridora-noise min-h-[100dvh] px-5 py-12"><div className="mx-auto mt-16 max-w-md rounded-[2rem] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6"><Logo /><h1 className="display-font mt-8 text-2xl">We couldn’t link this account.</h1><p className="mt-3 text-sm leading-6 text-[hsl(var(--muted-foreground))]">An email address or phone number may already be connected to another Gridora profile. Retry, or sign out and use the original account.</p><div className="mt-6 flex gap-3"><button onClick={() => current.refetch()} className="rounded-full bg-[hsl(var(--primary))] px-5 py-2.5 text-sm font-bold text-[hsl(var(--primary-foreground))]">Retry</button><button onClick={() => signOut({ redirectUrl: basePath || "/" })} className="rounded-full border border-[hsl(var(--border))] px-5 py-2.5 text-sm font-bold">Sign out</button></div></div></div></AuthGate>;
   return <div className="gridora-noise min-h-[100dvh]"><AppHeader user={current.data} /><DesktopRail /><main className="app-scroll min-h-[100dvh] px-4 pb-28 pt-[6.5rem] sm:px-8 lg:ml-64"><div className="mx-auto max-w-4xl page-enter">{children}</div></main><BottomNav /></div>;
@@ -290,7 +287,7 @@ function ProjectRow({ project }: { project: Project }) {
 }
 
 function SettingsPage() {
-  const { signOut } = useClerk();
+  const { signOut } = useAuthClient();
   const current = useGetCurrentUser({ query: { queryKey: getGetCurrentUserQueryKey() } });
   return <AppShell><div className="mono-font text-[10px] uppercase tracking-[.2em] text-[hsl(var(--primary))]">Your controls</div><h1 className="display-font mt-2 text-4xl tracking-[-.05em]">Settings</h1><div className="mt-8 space-y-3"><div className="rounded-3xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5"><div className="flex items-center gap-3"><ShieldCheck className="text-[hsl(var(--primary))]" size={20} /><div><div className="font-bold">Account</div><div className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">{current.data?.email || "Your account details"}</div></div></div><Link data-testid="link-settings-profile" href="/app/profile" className="mt-5 flex items-center justify-between rounded-2xl bg-[hsl(var(--muted))] px-4 py-3 text-sm font-semibold">Edit profile <ArrowUpRight size={16} /></Link></div><div className="rounded-3xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5"><div className="flex items-center gap-3"><LockKeyhole className="text-[hsl(var(--accent))]" size={20} /><div><div className="font-bold">Privacy by default</div><div className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">Your profile and messages stay in your control.</div></div></div></div><button data-testid="button-sign-out" onClick={() => signOut({ redirectUrl: basePath || "/" })} className="flex w-full items-center justify-between rounded-3xl border border-[hsl(var(--destructive)/.35)] bg-[hsl(var(--destructive)/.08)] px-5 py-4 text-sm font-bold text-[hsl(var(--destructive))]">Sign out <LogOut size={18} /></button></div></AppShell>;
 }
@@ -302,13 +299,29 @@ function AdminPage() {
 }
 
 function AuthPage({ mode }: { mode: "sign-in" | "sign-up" }) {
-  return <div className="gridora-noise flex min-h-[100dvh] items-center justify-center bg-[hsl(var(--background))] px-4 py-10"><div className="w-full max-w-[440px]"><div className="mb-8 flex items-center justify-between"><Logo /><Link data-testid="link-auth-home" href="/" className="text-xs text-[hsl(var(--muted-foreground))]">Back to Gridora</Link></div>{mode === "sign-in" ? <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} /> : <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />}</div></div>;
+  const { signIn, signUp } = useAuth();
+  const [, setLocation] = useLocation();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [pending, setPending] = useState(false);
+  const isSignIn = mode === "sign-in";
+  async function submit(event: import("react").FormEvent) {
+    event.preventDefault(); setError(""); setMessage(""); setPending(true);
+    const result = isSignIn ? await signIn(email, password) : await signUp(email, password, fullName);
+    setPending(false);
+    if (result.error) { setError(result.error); return; }
+    if (!isSignIn && result.needsEmailConfirmation) { setMessage("Check your email to confirm your account, then sign in."); return; }
+    setLocation("/app");
+  }
+  return <div className="gridora-noise flex min-h-[100dvh] items-center justify-center bg-[hsl(var(--background))] px-4 py-10"><div className="w-full max-w-[440px]"><div className="mb-8 flex items-center justify-between"><Logo /><Link data-testid="link-auth-home" href="/" className="text-xs text-[hsl(var(--muted-foreground))]">Back to Gridora</Link></div><form onSubmit={submit} className="rounded-[2rem] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl sm:p-8"><h1 className="display-font text-3xl">{isSignIn ? "Welcome back" : "Make room"}</h1><p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">{isSignIn ? "Keep making room for good work." : "Join a quieter creative network."}</p>{!isSignIn && <label className="mt-6 block text-sm font-semibold">Full name<input required value={fullName} onChange={(event) => setFullName(event.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-4 outline-none" /></label>}<label className="mt-6 block text-sm font-semibold">Email<input data-testid="input-auth-email" required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-4 outline-none" /></label><label className="mt-4 block text-sm font-semibold">Password<input data-testid="input-auth-password" required minLength={6} type="password" autoComplete={isSignIn ? "current-password" : "new-password"} value={password} onChange={(event) => setPassword(event.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-4 outline-none" /></label>{error && <p role="alert" className="mt-4 rounded-2xl bg-[hsl(var(--destructive)/.12)] p-3 text-sm text-[hsl(var(--destructive))]">{error}</p>}{message && <p role="status" className="mt-4 rounded-2xl bg-[hsl(var(--primary)/.12)] p-3 text-sm text-[hsl(var(--primary))]">{message}</p>}<button data-testid="button-auth-submit" disabled={pending} className="mt-6 w-full rounded-full bg-[hsl(var(--primary))] px-5 py-3.5 font-bold text-[hsl(var(--primary-foreground))] disabled:opacity-60">{pending ? "Please wait…" : isSignIn ? "Sign in" : "Create account"}</button><p className="mt-5 text-center text-sm text-[hsl(var(--muted-foreground))]">{isSignIn ? "New to Gridora? " : "Already have an account? "}<Link className="font-bold text-[hsl(var(--primary))]" href={isSignIn ? "/sign-up" : "/sign-in"}>{isSignIn ? "Create an account" : "Sign in"}</Link></p></form></div></div>;
 }
-
-function ClerkQueryInvalidator() {
-  const { addListener } = useClerk();
+function AuthQueryInvalidator() {
+  const { isSignedIn } = useAuth();
   const client = useQueryClient();
-  useEffect(() => addListener(({ user }) => { if (!user) client.clear(); }), [addListener, client]);
+  useEffect(() => { if (!isSignedIn) client.clear(); }, [isSignedIn, client]);
   return null;
 }
 
@@ -338,54 +351,12 @@ function relativeTime(value?: string) {
   return `${Math.floor(seconds / 86400)}d`;
 }
 
-const appearance = {
-  variables: {
-    colorPrimary: "hsl(267 91% 79%)",
-    colorForeground: "hsl(250 38% 95%)",
-    colorMutedForeground: "hsl(250 16% 64%)",
-    colorBackground: "hsl(248 22% 12%)",
-    colorInput: "hsl(249 20% 16%)",
-    colorInputForeground: "hsl(250 38% 95%)",
-    colorDanger: "hsl(4 74% 66%)",
-    colorNeutral: "hsl(252 18% 20%)",
-    fontFamily: "Manrope, sans-serif",
-    borderRadius: "1rem"
-  },
-  elements: {
-    rootBox: "w-full",
-    cardBox: "bg-[hsl(248_22%_12%)] border border-[hsl(252_20%_23%)] rounded-[2rem] w-full overflow-hidden shadow-2xl",
-    card: "!shadow-none !border-0 !bg-transparent",
-    footer: "!shadow-none !border-0 !bg-transparent",
-    headerTitle: "text-[hsl(250_38%_95%)] font-bold",
-    headerSubtitle: "text-[hsl(250_16%_64%)]",
-    socialButtonsBlockButtonText: { color: "hsl(250 38% 95%)", fontWeight: 600 },
-    formFieldLabel: "text-[hsl(250_38%_95%)]",
-    footerActionLink: "text-[hsl(267_91%_79%)]",
-    footerActionText: "text-[hsl(250_16%_64%)]",
-    dividerText: "text-[hsl(250_16%_64%)]",
-    formButtonPrimary: "bg-[hsl(267_91%_79%)] text-[hsl(249_25%_12%)] hover:bg-[hsl(267_91%_84%)]",
-    formFieldInput: "bg-[hsl(249_20%_16%)] border-[hsl(252_20%_26%)] text-[hsl(250_38%_95%)]",
-    socialButtonsBlockButton: {
-      backgroundColor: "hsl(249 20% 16%)",
-      borderColor: "hsl(252 20% 26%)"
-    },
-    alert: "bg-[hsl(4_74%_66%/.12)]",
-    alertText: "text-[hsl(4_74%_80%)]"
-  }
-};
 
-function stripBase(path: string) {
-  return basePath && path.startsWith(basePath) ? path.slice(basePath.length) || "/" : path;
+function SupabaseApp() {
+  return <SupabaseAuthProvider><QueryClientProvider client={queryClient}><AuthQueryInvalidator /><RoutedApp /></QueryClientProvider></SupabaseAuthProvider>;
 }
-
-function ClerkApp() {
-  const [, setLocation] = useLocation();
-  if (!clerkPubKey) return <PublicHomeContent />;
-  return <ClerkProvider publishableKey={clerkPubKey} proxyUrl={clerkProxyUrl} appearance={appearance} signInUrl={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} localization={{ signIn: { start: { title: "Welcome back", subtitle: "Keep making room for good work." } }, signUp: { start: { title: "Make room", subtitle: "Join a quieter creative network." } } }} routerPush={(to) => setLocation(stripBase(to))} routerReplace={(to) => setLocation(stripBase(to))}><QueryClientProvider client={queryClient}><ClerkQueryInvalidator /><RoutedApp /></QueryClientProvider></ClerkProvider>;
-}
-
 function App() {
-  return <WouterRouter base={basePath}><ClerkApp /></WouterRouter>;
+  return <WouterRouter base={basePath}><SupabaseApp /></WouterRouter>;
 }
 
 export default App;

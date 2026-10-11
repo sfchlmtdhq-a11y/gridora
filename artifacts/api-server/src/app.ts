@@ -3,7 +3,6 @@ import cors from "cors";
 import { pinoHttp } from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
-import { clerkMiddleware } from "@clerk/express";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -35,8 +34,7 @@ app.use(cors({ credentials: true, origin: corsOrigins?.length ? corsOrigins : fa
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Reads CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY from the environment.
-app.use(clerkMiddleware());
+// Supabase Auth bearer tokens are verified by the protected API routes.
 
 app.use("/api", router);
 

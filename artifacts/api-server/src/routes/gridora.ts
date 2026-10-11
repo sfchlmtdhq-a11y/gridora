@@ -31,7 +31,7 @@ import {
   TogglePostLikeParams,
   UpdateMyProfileBody,
 } from "@workspace/api-zod";
-import { clerkProfile, requireUser, type AuthenticatedRequest } from "../middlewares/auth";
+import { supabaseProfile, requireUser, type AuthenticatedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
@@ -65,13 +65,13 @@ function normalizePhone(phone: string | null | undefined): string | null {
 }
 
 const configuredAdminIds = new Set(
-  (process.env.ADMIN_CLERK_USER_IDS ?? "")
+  (process.env.ADMIN_SUPABASE_USER_IDS ?? "")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean),
 );
 const configuredAdminEmails = new Set(
-  (process.env.ADMIN_CLERK_EMAILS ?? "")
+  (process.env.ADMIN_SUPABASE_EMAILS ?? "")
     .split(",")
     .map(canonicalEmail)
     .filter(Boolean),
@@ -85,11 +85,7 @@ async function promoteIfConfiguredAdmin(
 
   let isConfiguredAdmin = configuredAdminIds.has(userId);
   if (!isConfiguredAdmin && configuredAdminEmails.has(canonicalEmail(user.email))) {
-    const profile = await clerkProfile(userId);
-    isConfiguredAdmin =
-      profile.emailVerified &&
-      canonicalEmail(profile.email) === canonicalEmail(user.email) &&
-      configuredAdminEmails.has(canonicalEmail(profile.email));
+    isConfiguredAdmin = configuredAdminEmails.has(canonicalEmail(user.email));
   }
   if (!isConfiguredAdmin) return user;
 
@@ -101,11 +97,11 @@ async function promoteIfConfiguredAdmin(
   return promoted ?? user;
 }
 
-async function ensureUser(userId: string) {
+async function ensureUser(userId: string, authUser?: AuthenticatedRequest["supabaseUser"]) {
   const [existing] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (existing) return promoteIfConfiguredAdmin(existing, userId);
 
-  const profile = await clerkProfile(userId);
+  const profile = await supabaseProfile(userId, authUser);
   const email = normalizedEmail(profile.email);
   const phone = normalizePhone(profile.phone);
   const isConfiguredAdmin =
@@ -172,7 +168,7 @@ async function count(table: typeof likesTable | typeof commentsTable | typeof re
 }
 
 router.get("/me", requireUser, async (req, res): Promise<void> => {
-  const user = await ensureUser(getUserId(req as AuthenticatedRequest));
+  const user = await ensureUser(getUserId(req as AuthenticatedRequest), (req as AuthenticatedRequest).supabaseUser);
   res.json(GetCurrentUserResponse.parse({ ...profileOf(user), role: user.role }));
 });
 
@@ -184,7 +180,7 @@ router.get("/profiles", requireUser, async (req, res): Promise<void> => {
   }
 
   const currentUserId = getUserId(req as AuthenticatedRequest);
-  await ensureUser(currentUserId);
+  await ensureUser(currentUserId, (req as AuthenticatedRequest).supabaseUser);
   const filters = [];
   if (parsed.data.q) {
     filters.push(or(ilike(usersTable.fullName, `%${parsed.data.q}%`), ilike(usersTable.username, `%${parsed.data.q}%`)));
@@ -202,12 +198,12 @@ router.patch("/profiles/me", requireUser, async (req, res): Promise<void> => {
     return;
   }
   const currentUserId = getUserId(req as AuthenticatedRequest);
-  await ensureUser(currentUserId);
+  await ensureUser(currentUserId, (req as AuthenticatedRequest).supabaseUser);
   let phone: string | null;
   try {
-    // Phone numbers are sourced only from the user's verified Clerk account;
+    // Phone numbers are sourced only from the user's verified Supabase account;
     // never trust an unverified phone value submitted in a profile payload.
-    phone = normalizePhone((await clerkProfile(currentUserId)).phone);
+    phone = normalizePhone((await supabaseProfile(currentUserId, (req as AuthenticatedRequest).supabaseUser)).phone);
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "Invalid phone number" });
     return;
@@ -236,7 +232,7 @@ router.get("/profiles/:userId", requireUser, async (req, res): Promise<void> => 
 
 router.get("/connections", requireUser, async (req, res): Promise<void> => {
   const currentUserId = getUserId(req as AuthenticatedRequest);
-  await ensureUser(currentUserId);
+  await ensureUser(currentUserId, (req as AuthenticatedRequest).supabaseUser);
   const acceptedRows = await db
     .select({ connection: connectionsTable, other: usersTable })
     .from(connectionsTable)
@@ -273,7 +269,7 @@ router.post("/connections", requireUser, async (req, res): Promise<void> => {
     return;
   }
   const currentUserId = getUserId(req as AuthenticatedRequest);
-  await ensureUser(currentUserId);
+  await ensureUser(currentUserId, (req as AuthenticatedRequest).supabaseUser);
   if (body.data.recipientId === currentUserId || !(await userById(body.data.recipientId))) {
     res.status(400).json({ error: "Choose an existing user" });
     return;
@@ -331,7 +327,7 @@ router.patch("/connections/:connectionId", requireUser, async (req, res): Promis
 
 router.get("/conversations", requireUser, async (req, res): Promise<void> => {
   const currentUserId = getUserId(req as AuthenticatedRequest);
-  await ensureUser(currentUserId);
+  await ensureUser(currentUserId, (req as AuthenticatedRequest).supabaseUser);
   const accepted = await db.select({ other: usersTable }).from(connectionsTable).innerJoin(
     usersTable,
     or(
@@ -416,7 +412,7 @@ router.delete("/messages/:messageId", requireUser, async (req, res): Promise<voi
 
 router.get("/posts", requireUser, async (req, res): Promise<void> => {
   const currentUserId = getUserId(req as AuthenticatedRequest);
-  await ensureUser(currentUserId);
+  await ensureUser(currentUserId, (req as AuthenticatedRequest).supabaseUser);
   const posts = await db.select({ post: postsTable, author: usersTable }).from(postsTable).innerJoin(usersTable, eq(usersTable.id, postsTable.authorId)).orderBy(desc(postsTable.createdAt));
   const result = await Promise.all(posts.map(async ({ post, author }) => {
     const [likeCount] = await db.select({ count: sql<number>`count(*)` }).from(likesTable).where(eq(likesTable.postId, post.id));
@@ -434,7 +430,7 @@ router.post("/posts", requireUser, async (req, res): Promise<void> => {
     return;
   }
   const currentUserId = getUserId(req as AuthenticatedRequest);
-  await ensureUser(currentUserId);
+  await ensureUser(currentUserId, (req as AuthenticatedRequest).supabaseUser);
   const [post] = await db.insert(postsTable).values({ authorId: currentUserId, body: body.data.body }).returning();
   const author = await userById(currentUserId);
   res.status(201).json({ id: post.id, author: profileOf(author!), body: post.body, likeCount: 0, commentCount: 0, likedByMe: false, createdAt: post.createdAt });
@@ -472,7 +468,7 @@ router.post("/posts/:postId/comments", requireUser, async (req, res): Promise<vo
     return;
   }
   const currentUserId = getUserId(req as AuthenticatedRequest);
-  await ensureUser(currentUserId);
+  await ensureUser(currentUserId, (req as AuthenticatedRequest).supabaseUser);
   const [comment] = await db.insert(commentsTable).values({ postId: params.data.postId, authorId: currentUserId, body: body.data.body }).returning();
   const author = await userById(currentUserId);
   res.status(201).json({ id: comment.id, author: profileOf(author!), body: comment.body, createdAt: comment.createdAt });
@@ -480,7 +476,7 @@ router.post("/posts/:postId/comments", requireUser, async (req, res): Promise<vo
 
 router.get("/projects", requireUser, async (req, res): Promise<void> => {
   const currentUserId = getUserId(req as AuthenticatedRequest);
-  await ensureUser(currentUserId);
+  await ensureUser(currentUserId, (req as AuthenticatedRequest).supabaseUser);
   const projects = await db.select().from(projectsTable).where(or(eq(projectsTable.clientId, currentUserId), eq(projectsTable.designerId, currentUserId))).orderBy(desc(projectsTable.createdAt));
   res.json(ListProjectsResponse.parse(projects));
 });
@@ -492,21 +488,21 @@ router.post("/projects", requireUser, async (req, res): Promise<void> => {
     return;
   }
   const currentUserId = getUserId(req as AuthenticatedRequest);
-  await ensureUser(currentUserId);
+  await ensureUser(currentUserId, (req as AuthenticatedRequest).supabaseUser);
   const [project] = await db.insert(projectsTable).values({ title: body.data.title, description: body.data.description, clientId: currentUserId, designerId: body.data.designerId ?? null }).returning();
   res.status(201).json(project);
 });
 
 router.get("/notifications", requireUser, async (req, res): Promise<void> => {
   const currentUserId = getUserId(req as AuthenticatedRequest);
-  await ensureUser(currentUserId);
+  await ensureUser(currentUserId, (req as AuthenticatedRequest).supabaseUser);
   const notifications = await db.select().from(notificationsTable).where(eq(notificationsTable.userId, currentUserId)).orderBy(desc(notificationsTable.createdAt));
   res.json(ListNotificationsResponse.parse(notifications));
 });
 
 router.get("/admin/summary", requireUser, async (req, res): Promise<void> => {
   const currentUserId = getUserId(req as AuthenticatedRequest);
-  const user = await ensureUser(currentUserId);
+  const user = await ensureUser(currentUserId, (req as AuthenticatedRequest).supabaseUser);
   if (user.role !== "admin") {
     res.status(403).json({ error: "Admin role required" });
     return;
