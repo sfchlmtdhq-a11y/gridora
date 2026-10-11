@@ -19,7 +19,6 @@ await esbuild({
   bundle: true,
   format: "esm",
   outdir: apiDir,
-  outExtension: { ".js": ".mjs" },
   entryNames: "index",
   logLevel: "info",
   external: ["pg-native"],
@@ -34,4 +33,4 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
   },
 });
 
-console.log("Vercel API function ready in api/index.mjs");
+console.log("Vercel API function ready in api/index.js");
