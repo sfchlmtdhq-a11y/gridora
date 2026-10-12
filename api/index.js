@@ -56740,14 +56740,9 @@ var insertNotificationSchema = createInsertSchema(notificationsTable).omit({ id:
 
 // ../../lib/db/src/index.ts
 var { Pool: Pool3 } = esm_default;
-if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?"
-  );
-}
 var pool = new Pool3({
-  connectionString: process.env.DATABASE_URL,
-  max: Number(process.env.DB_POOL_MAX ?? 3)
+  max: Number(process.env.DB_POOL_MAX ?? 3),
+  ...process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {}
 });
 var db = drizzle(pool, { schema: schema_exports });
 
@@ -57233,7 +57228,7 @@ var routes_default = router3;
 
 // src/lib/logger.ts
 var import_pino = __toESM(require_pino(), 1);
-var isProduction = process.env.NODE_ENV === "production";
+var isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
 var logger = (0, import_pino.default)({
   level: process.env.LOG_LEVEL ?? "info",
   redact: [
