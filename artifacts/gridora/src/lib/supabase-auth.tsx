@@ -14,6 +14,7 @@ type AuthContextValue = {
   session: Session | null;
   signIn: (email: string, password: string) => Promise<{ error?: string; needsEmailConfirmation?: boolean }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error?: string; needsEmailConfirmation?: boolean }>;
+  deleteAccount: (password: string) => Promise<{ error?: string }>;
   signOut: (options?: { redirectUrl?: string }) => Promise<void>;
 };
 
@@ -64,6 +65,19 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       return error
         ? { error: error.message }
         : { needsEmailConfirmation: !data.session };
+    },
+    async deleteAccount(password) {
+      if (!supabase) return { error: "Supabase Auth is not configured." };
+      const email = session?.user.email;
+      if (!email) return { error: "This account does not have an email address." };
+      const { data: reauthenticated, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError || !reauthenticated.session) return { error: "The password is incorrect. Your account was not deleted." };
+      const { error } = await supabase.functions.invoke("delete-account", {
+        headers: { Authorization: `Bearer ${reauthenticated.session.access_token}` },
+      });
+      if (error) return { error: error.message || "We could not delete your account. Try again." };
+      await supabase.auth.signOut();
+      return {};
     },
     async signOut(options) {
       await supabase?.auth.signOut();
